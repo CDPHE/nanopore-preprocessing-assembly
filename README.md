@@ -1,5 +1,8 @@
 # nanopore-preprocessing-assembly
-preprocessing and assembly workflows for nanopore data
+
+## preprocessing and assembly workflows for nanopore data
+
+### NanoporeGuppyAssembly.wdl
 
 The NanoporeGuppyAssembly.wdl workflow was developed for the preprocessing and assembly of Oxford Nanopore sequencing of SARS-CoV-2 ro be run on the GCP Terra platform. It takes basecalled fastq files as input (e.g. from MinKNOW).
 
