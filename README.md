@@ -4,10 +4,10 @@
 
 ### NanoporeGuppyAssembly.wdl
 
-The NanoporeGuppyAssembly.wdl workflow was developed for the preprocessing and assembly of Oxford Nanopore sequencing of SARS-CoV-2 ro be run on the GCP Terra platform. It takes basecalled fastq files as input (e.g. from MinKNOW).
+The NanoporeGuppyAssembly.wdl workflow was developed for the preprocessing and assembly of Oxford Nanopore sequencing of SARS-CoV-2 to be run on the GCP Terra platform. It takes basecalled fastq files as input (e.g. from MinKNOW).
 
 The columns for the input data table in Terra should be arranged as:
-1. entity:sample_id (column of sample names/ids). If there is more than one data table in the Terra Workspave, add a number after the word sample (e.g. entity:sample2_id).
+1. entity:sample_id (column of sample names/ids). If there is more than one data table in the Terra Workspace, add a number after the word sample (e.g. entity:sample2_id).
 2. barcode (the ONT barocde for the sample, e.g. barcode01)
 3. fastq_dir (the path to the google bucket directory containing the basecalled fastq files)
 4. out_dir (google bucket path where you would like the output files transferred)
@@ -24,4 +24,4 @@ The NanoporeGuppyAssembly.wdl workflow will:
 7. Generate a consensus genome fasta using iVar consensus
 8. Assign SARS-CoV-2 lineages using Pangolin
 9. Assign clades with Nextclade
-10. Tranfer outputs to your chosen google bucket
+10. Tranfer outputs to your chosen google bucket (directory needs to already exist)

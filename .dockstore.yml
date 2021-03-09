@@ -2,4 +2,8 @@ version: 1.2
 workflows:
    - name: NanoporeGuppyAssembly
      subclass: WDL
+<<<<<<< HEAD
      primaryDescriptorPath: nanopore-preprocessing-assembly/NanoporeGuppyAssembly.wdl
+=======
+     primaryDescriptorPath: /NanoporeGuppyAssembly.wdl
+>>>>>>> a6757fd8454c58c70659c11ca194d8898627312e
