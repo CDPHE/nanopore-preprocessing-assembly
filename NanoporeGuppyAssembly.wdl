@@ -7,6 +7,7 @@ workflow NanoporeGuppyAssembly {
         String    sample_id
         String    barcode
         File    covid_genome
+        String    out_dir
     }
     call ListFastqFiles {
         input:
@@ -60,6 +61,16 @@ workflow NanoporeGuppyAssembly {
             barcode = barcode,
             fasta = Consensus.consensus
     }
+    call nextclade_one_sample {
+        input:
+             genome_fasta = Consensus.consensus
+    }
+    call transfer_outputs {
+        input:
+            out_dir = out_dir,
+            data = [FiltLong.filtered_fastq, Minimap2.sorted_bam, Bam_stats.flagstat_out, Bam_stats.stats_out, Bam_stats.covhist_out, Bam_stats.cov_out, Variants.vcf_final, Consensus.consensus, Pangolin.lineage, nextclade_one_sample.nextclade_json, nextclade_one_sample.auspice_json, nextclade_one_sample.nextclade_csv]
+    }
+    
     output {
         File barcode_summary = Demultiplex.barcode_summary
         Array[File] guppy_demux_fastq = Demultiplex.guppy_demux_fastq
@@ -72,7 +83,12 @@ workflow NanoporeGuppyAssembly {
         File cov_out = Bam_stats.cov_out
         File variants = Variants.vcf_final
         File consensus = Consensus.consensus
+        String pangolin_version = Pangolin.pangolin_version
         File pangolin = Pangolin.lineage
+        String nextclade_version = nextclade_one_sample.nextclade_version
+        File nextclade_json = nextclade_one_sample.nextclade_json
+        File auspice_json = nextclade_one_sample.auspice_json
+        File nextclade_csv = nextclade_one_sample.nextclade_csv
     }
 }
 
@@ -351,11 +367,14 @@ task Pangolin {
 
     command {
     
+        pangolin --version > VERSION
         pangolin ${fasta} --outfile ${sample_id}_${barcode}_lineage_report.csv
     
     }
 
     output {
+    
+        String pangolin_version = read_string("VERSION")
         File lineage = "${sample_id}_${barcode}_lineage_report.csv"
     }
 
@@ -367,5 +386,65 @@ task Pangolin {
         preemptible:    0
         maxRetries:    0
         docker:    "staphb/pangolin"
+    }
+}
+    
+task nextclade_one_sample {
+    input {
+        File genome_fasta
+    }
+    
+    String basename = basename(genome_fasta, ".fa")
+    
+    command {
+        nextclade --version > VERSION
+        nextclade --input-fasta "${genome_fasta}" --output-json "${basename}".nextclade.json --output-csv "${basename}".nextclade.csv --output-tree "${basename}".nextclade.auspice.json
+    }
+    
+    output {
+        String nextclade_version = read_string("VERSION")
+        File nextclade_json = "${basename}.nextclade.json"
+        File auspice_json = "${basename}.nextclade.auspice.json"
+        File nextclade_csv = "${basename}.nextclade.csv"
+    }
+    
+    runtime {
+        docker: "nextstrain/nextclade:0.13.0"
+        memory: "3 GB"
+        cpu: 2
+        disks: "local-disk 50 HDD"
+        dx_instance_type: "mem1_ssd1_v2_x2"
+    }
+}
+
+task transfer_outputs {
+    input {
+        String out_dir
+        Array[File] data
+    }
+    
+    String outdir = sub(out_dir, "/$", "")
+    
+    parameter_meta {
+        data: {
+            localization_optional: true
+        }
+    }
+
+    command <<<
+        gsutil -m cp ~{sep=' ' data} ~{outdir}
+        transferdate=`date`
+        echo $transferdate | tee TRANSFERDATE
+    >>>
+
+    output {
+        String transfer_date = read_string("TRANSFERDATE")
+    }
+
+    runtime {
+        docker: "theiagen/utility:1.0"
+        memory: "1 GB"
+        cpu: 1
+        disks: "local-disk 10 SSD"
     }
 }
