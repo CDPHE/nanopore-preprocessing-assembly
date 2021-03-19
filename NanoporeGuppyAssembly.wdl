@@ -7,7 +7,6 @@ workflow NanoporeGuppyAssembly {
         String    sample_id
         String    barcode
         File    covid_genome
-        String    out_dir
     }
     call ListFastqFiles {
         input:
@@ -352,7 +351,7 @@ task rename_fasta {
 
     command {
 
-        seqtk rename ${fasta} CO-CDPHE-${sample_id} > ${sample_id}_consensus_renamed.fa
+        sed 's/>.*/>CO-CDPHE-~{sample_id}/' ~{fasta} > ~{sample_id}_consensus_renamed.fa
 
     }
 
@@ -363,12 +362,9 @@ task rename_fasta {
     }
 
     runtime {
-        cpu:    2
-        memory:    "8 GiB"
-        disks:    "local-disk 1 HDD"
-        bootDiskSizeGb:    10
-        preemptible:    0
-        maxRetries:    0
-        docker:    "nanozoo/seqtk:1.3--dc0d16b"
+        docker: "theiagen/utility:1.0"
+        memory: "1 GB"
+        cpu: 1
+        disks: "local-disk 10 SSD"
     }
 }
