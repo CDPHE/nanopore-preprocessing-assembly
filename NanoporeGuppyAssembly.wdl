@@ -55,10 +55,18 @@ workflow NanoporeGuppyAssembly {
             reads = FiltLong.filtered_fastq
     }
     
+    call Scaffold {
+        input:
+            sample_id = sample_id,
+            barcode = barcode,
+            ref = covid_genome,
+            fasta = Consensus.consensus
+    }
+    
     call rename_fasta {
         input:
             sample_id = sample_id,
-            fasta = Consensus.consensus
+            fasta = Scaffold.scaffold
     }
 
     output {
@@ -72,7 +80,7 @@ workflow NanoporeGuppyAssembly {
         File covhist_out = Bam_stats.covhist_out
         File cov_out = Bam_stats.cov_out
         File variants = Variants.vcf_final
-        File consensus = Consensus.consensus
+        File consensus = Scaffold.scaffold
         File renamed_consensus = rename_fasta.renamed_consensus
     }
 }
@@ -338,6 +346,37 @@ task Consensus {
         preemptible:    0
         maxRetries:    0
         docker:    "staphb/artic-ncov2019-medaka:1.1.0"
+    }
+}
+
+task Scaffold {
+    input {
+        String sample_id
+        String barcode
+        File fasta
+        File ref
+    }
+
+    Int disk_size = 3 * ceil(size(fasta, "GB"))
+
+    command {
+    
+        pyScaf.py -f ${fasta} -o ${sample_id}_${barcode}_consensus_scaffold.fa -r ${ref}
+    
+    }
+
+    output {
+        File scaffold = "${sample_id}_${barcode}_consensus_scaffold.fa"
+    }
+
+    runtime {
+        cpu:    4
+        memory:    "8 GiB"
+        disks:    "local-disk " + disk_size + " HDD"
+        bootDiskSizeGb:    10
+        preemptible:    0
+        maxRetries:    0
+        docker:    "chrishah/pyscaf-docker"
     }
 }
 

@@ -19,6 +19,7 @@ The NanoporeGuppyAssembly.wdl workflow will:
 3. Perform quality filtering on the fastq files using FiltLong
 4. Align reads to the SARS-CoV-2 reference genome using Minimap2
 5. Generate base and alignment quality and coverage statistics on the bam file using Samtools
-6. Call variants on the bam file and generate a vcf using iVar
-7. Generate a consensus genome fasta using iVar consensus
-8. Rename consensus to CO-CDPHE-{sample_id}
+6. Call variants on the bam file and generate a vcf using Medaka
+7. Generate a draft assembly with Medaka
+8. Scaffold assembly with pyScaf 
+9. Rename consensus to CO-CDPHE-{sample_id}
