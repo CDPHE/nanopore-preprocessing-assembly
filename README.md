@@ -23,3 +23,4 @@ The NanoporeGuppyAssembly.wdl workflow will:
 7. Generate a draft assembly with Medaka
 8. Scaffold assembly with pyScaf 
 9. Rename consensus to CO-CDPHE-{sample_id}
+10. Calculates percent coverage
