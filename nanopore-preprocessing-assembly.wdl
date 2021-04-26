@@ -18,56 +18,36 @@ workflow NanoporeGuppyAssembly {
             fastq_files = ListFastqFiles.fastq_files,
             barcode = barcode
     }
-    call MergeFastq {
+    call Read_Filtering {
         input:
-            fastq_files = Demultiplex.guppy_demux_fastq
+            fastq_files = Demultiplex.guppy_demux_fastq,
+            barcode = barcode,
+            sample_id = sample_id
     }
-    call FiltLong {
+    call Medaka {
         input:
-            merged_fastq = MergeFastq.merged_fastq,
-            sample_id = sample_id,
-            barcode = barcode
-    }
-    call Minimap2 {
-        input:
-            reads = FiltLong.filtered_fastq,
-            ref = covid_genome,
+            filtered_reads = Read_Filtering.guppyplex_fastq,
             sample_id = sample_id,
             barcode = barcode
     }
     call Bam_stats {
         input:
-            bam = Minimap2.sorted_bam,
+            bam = Medaka.trim_sorted_bam,
             sample_id = sample_id,
             barcode = barcode
     }
-    call Variants {
-        input:
-            bam = Minimap2.sorted_bam,
-            ref = covid_genome,
-            sample_id = sample_id,
-            barcode = barcode
-    }
-    call Consensus {
-        input:
-            ref = covid_genome,
-            sample_id = sample_id,
-            barcode = barcode,
-            reads = FiltLong.filtered_fastq
-    }
-
     call Scaffold {
         input:
             sample_id = sample_id,
             barcode = barcode,
             ref = covid_genome,
-            fasta = Consensus.consensus
+            fasta = Medaka.consensus
     }
 
     call rename_fasta {
         input:
             sample_id = sample_id,
-            fasta = Scaffold.scaffold
+            fasta = Scaffold.scaffold_consensus
     }
 
     call calc_percent_cvg {
@@ -80,17 +60,20 @@ workflow NanoporeGuppyAssembly {
     output {
         File barcode_summary = Demultiplex.barcode_summary
         Array[File] guppy_demux_fastq = Demultiplex.guppy_demux_fastq
-        File merged_fastq = MergeFastq.merged_fastq
-        File filtered_fastq = FiltLong.filtered_fastq
-        File sorted_bam = Minimap2.sorted_bam
+        File filtered_fastq = Read_Filtering.guppyplex_fastq
+        File sorted_bam = Medaka.sorted_bam
+        File trim_sorted_bam = Medaka.trim_sorted_bam
+        File trim_sorted_bai = Medaka.trim_sorted_bai
         File flagstat_out = Bam_stats.flagstat_out
         File samstats_out = Bam_stats.stats_out
         File covhist_out = Bam_stats.covhist_out
         File cov_out = Bam_stats.cov_out
-        File variants = Variants.vcf_final
-        File consensus = Scaffold.scaffold
+        File variants = Medaka.variants
+        File consensus = Medaka.consensus
+        File scaffold_consensus = Scaffold.scaffold_consensus
         File renamed_consensus = rename_fasta.renamed_consensus
         File percent_cvg_csv = calc_percent_cvg.percent_cvg_csv
+        String artic_pipeline_version = Medaka.artic_pipeline_version
     }
 }
 
@@ -143,8 +126,8 @@ task Demultiplex {
     }
 
     runtime {
-        cpu:    4
-        memory:    "8 GiB"
+        cpu:    8
+        memory:    "16 GiB"
         disks:    "local-disk " + disk_size + " HDD"
         bootDiskSizeGb:    30
         preemptible:    0
@@ -154,99 +137,75 @@ task Demultiplex {
         nvidiaDriverVersion:    "418.152.00"
         zones:    ["us-east1-c"]
         cpuPlatform:    "Intel Haswell"
-        docker:    "genomicpariscentre/guppy:4.4.1"
+        docker:    "genomicpariscentre/guppy"
     }
 }
 
-task MergeFastq {
+task Read_Filtering {
     input {
-        Array[File] fastq_files
-    }
-
-    Int disk_size = 3 * ceil(size(fastq_files, "GB"))
-
-    command <<<
-
-        cat ~{sep=" " fastq_files} > merged.fastq
-
-    >>>
-
-    output {
-        File merged_fastq = "merged.fastq"
-    }
-
-    runtime {
-        cpu:    1
-        memory:    "4 GiB"
-        disks:    "local-disk " + disk_size + " HDD"
-        bootDiskSizeGb:    10
-        preemptible:    0
-        maxRetries:    0
-        docker:    "us.gcr.io/broad-dsp-lrma/lr-utils:0.1.6"
-    }
-}
-
-task FiltLong {
-    input {
-        String sample_id
+        Array[File] fastq_files 
         String barcode
-        File merged_fastq
+        String sample_id
     }
 
-    Int disk_size = 3 * ceil(size(merged_fastq, "GB"))
-
     command <<<
-
-        filtlong --min_length 400 --keep_percent 90 ~{merged_fastq} | gzip > ~{sample_id}_~{barcode}_filtered_reads.fastq.gz
+        set -e
+        mkdir fastq_files
+        ln -s ~{sep=' ' fastq_files} fastq_files
+        ls -alF fastq_files
+        
+        artic guppyplex --min-length 400 --max-length 700 --directory fastq_files --output ~{sample_id}_~{barcode}.fastq
 
     >>>
 
     output {
-        File filtered_fastq = "${sample_id}_${barcode}_filtered_reads.fastq.gz"
+        File guppyplex_fastq = "${sample_id}_${barcode}.fastq"
     }
 
     runtime {
-        cpu:    4
-        memory:    "8 GiB"
-        disks:    "local-disk " + disk_size + " HDD"
-        bootDiskSizeGb:    10
-        preemptible:    0
-        maxRetries:    0
-        docker:    "staphb/filtlong:0.2.0-cv1"
+        docker: "theiagen/artic-ncov2019:1.1.3"
+        memory: "16 GB"
+        cpu: 8
+        disks: "local-disk 100 SSD"
+        preemptible: 0
     }
 }
 
-task Minimap2 {
+task Medaka {
     input {
-        String sample_id
         String barcode
-        File reads
-        File ref
+        String sample_id
+        File filtered_reads
     }
 
-    Int disk_size = 3 * ceil(size(reads, "GB"))
-
     command <<<
-
-        minimap2 -a -x map-ont ~{ref} ~{reads} > ~{sample_id}_~{barcode}_minimap2.sam
-
-        samtools sort -O bam -o ~{sample_id}_~{barcode}_sorted.bam ~{sample_id}_~{barcode}_minimap2.sam
+    
+        artic -v > VERSION
+        artic minion --medaka --normalise 20000 --threads 8 --scheme-directory /artic-ncov2019/primer_schemes --read-file ~{filtered_reads} nCoV-2019/V3 ~{barcode}
+        
+        cp ~{barcode}.consensus.fasta ~{sample_id}_~{barcode}.consensus.fasta
+        cp ~{barcode}.trimmed.rg.sorted.bam ~{sample_id}_~{barcode}.trimmed.rg.sorted.bam
+        cp ~{barcode}.primertrimmed.rg.sorted.bam ~{sample_id}_~{barcode}.primertrimmed.rg.sorted.bam
+        cp ~{barcode}.primertrimmed.rg.sorted.bam.bai ~{sample_id}_~{barcode}.primertrimmed.rg.sorted.bam.bai
+        cp ~{barcode}.pass.vcf.gz ~{sample_id}_~{barcode}.pass.vcf.gz
 
     >>>
 
     output {
-        File sam = "${sample_id}_${barcode}_minimap2.sam"
-        File sorted_bam = "${sample_id}_${barcode}_sorted.bam"
+        File consensus = "${sample_id}_${barcode}.consensus.fasta"
+        File sorted_bam = "${sample_id}_${barcode}.trimmed.rg.sorted.bam"
+        File trim_sorted_bam = "${sample_id}_${barcode}.primertrimmed.rg.sorted.bam"
+        File trim_sorted_bai = "${sample_id}_${barcode}.primertrimmed.rg.sorted.bam.bai"
+        File variants = "${sample_id}_${barcode}.pass.vcf.gz"
+        String artic_pipeline_version = read_string("VERSION")
     }
 
     runtime {
-        cpu:    4
-        memory:    "8 GiB"
-        disks:    "local-disk " + disk_size + " HDD"
-        bootDiskSizeGb:    10
-        preemptible:    0
-        maxRetries:    0
-        docker:    "matmu/nanopore"
+        docker: "theiagen/artic-ncov2019:1.1.3"
+        memory: "16 GB"
+        cpu: 8
+        disks: "local-disk 100 SSD"
+        preemptible: 0
     }
 }
 
@@ -290,74 +249,6 @@ task Bam_stats {
     }
 }
 
-task Variants {
-    input {
-        String sample_id
-        String barcode
-        File bam
-        File ref
-    }
-
-    Int disk_size = 3 * ceil(size(bam, "GB"))
-
-    command <<<
-
-        samtools index ~{bam}
-
-        medaka_variant -i ~{bam} -f ~{ref}
-
-        cp medaka_variant/round_1.vcf medaka_variant/~{sample_id}_~{barcode}.vcf
-
-    >>>
-
-    output {
-        File vcf_final = "medaka_variant/${sample_id}_${barcode}.vcf"
-    }
-
-    runtime {
-        cpu:    4
-        memory:    "8 GiB"
-        disks:    "local-disk " + disk_size + " HDD"
-        bootDiskSizeGb:    10
-        preemptible:    0
-        maxRetries:    0
-        docker:    "staphb/artic-ncov2019-medaka:1.1.0"
-    }
-}
-
-task Consensus {
-    input {
-        String sample_id
-        String barcode
-        File ref
-        File reads
-    }
-
-    Int disk_size = 3 * ceil(size(reads, "GB"))
-
-    command {
-
-        medaka_consensus -i ${reads} -d ${ref}
-
-        cp medaka/consensus.fasta medaka/${sample_id}_${barcode}_consensus.fa
-
-    }
-
-    output {
-        File consensus = "medaka/${sample_id}_${barcode}_consensus.fa"
-    }
-
-    runtime {
-        cpu:    4
-        memory:    "8 GiB"
-        disks:    "local-disk " + disk_size + " HDD"
-        bootDiskSizeGb:    10
-        preemptible:    0
-        maxRetries:    0
-        docker:    "staphb/artic-ncov2019-medaka:1.1.0"
-    }
-}
-
 task Scaffold {
     input {
         String sample_id
@@ -375,7 +266,7 @@ task Scaffold {
     }
 
     output {
-        File scaffold = "${sample_id}_${barcode}_consensus_scaffold.fa"
+        File scaffold_consensus = "${sample_id}_${barcode}_consensus_scaffold.fa"
     }
 
     runtime {
